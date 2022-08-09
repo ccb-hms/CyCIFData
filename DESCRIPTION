@@ -1,0 +1,52 @@
+Package: CyCIFData
+Title: Collection of public CyCIF datasets
+Version: 0.99.3
+Authors@R: 
+    c(person("Ludwig", "Geistlinger", 
+             role = c("aut", "cre"),
+             email = "ludwig_geistlinger@hms.harvard.edu", 
+             comment = c(ORCID = "0000-0002-2495-5464")),
+      person("Tyrone", "Lee", role = "ctb"),
+      person("Robert", "Gentleman", role = "aut"))
+Description: CyCIFData is an ExperimentHub package that serves publicly available
+    datasets obtained with cyclic immunofluorescence (CyCIF). CyCIF is a highly
+    multiplexed immuno-fluorescence imaging technology of formalin-fixed,
+    paraffin-embedded (FFPE) specimens mounted on glass slides, the most widely
+    used specimens for histopathological diagnosis of cancer and other diseases.
+    CyCIF generates up to 60-plex images using an iterative process (a cycle) in
+    which conventional low-plex fluorescence images are repeatedly collected from
+    the same sample. The scope of the package is to provide CyCIF data for method
+    development and analysis.
+License: Artistic-2.0
+VignetteBuilder: knitr
+LazyData: false
+URL: https://github.com/ccb-hms/CyCIFData
+BugReports: https://github.com/ccb-hms/CyCIFData/issues
+Depends:
+    R (>= 4.2.0),
+    cytomapper,
+    SpatialExperiment
+Imports: 
+    grDevices,
+    AnnotationHub,
+    ExperimentHub,
+    S4Vectors
+Suggests:
+    grid,
+    ggplot2, 
+    ggpubr,
+    knitr,
+    rmarkdown,
+    testthat,
+    BiocStyle,
+    ExperimentHubData
+biocViews:
+    ExperimentHub,
+    ExpressionData,
+    HighThroughputImagingData,
+    Homo_sapiens_Data,
+    SingleCellData,
+    SpatialData
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.0

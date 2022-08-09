@@ -1,0 +1,132 @@
+---
+title: "Import and representation of CyCIF tissue microarray data"
+author: "Ludwig Geistlinger and Robert Gentleman"
+affiliation: Center for Computational Biomedicine, Harvard Medical School
+output:
+  BiocStyle::html_document:
+    self_contained: yes 
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    code_folding: show
+date: "`r doc_date()`"
+vignette: >
+  % \VignetteIndexEntry{CyCIF TMA}
+  % \VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+    collapse = TRUE,
+    comment = "#>",
+    crop = NULL ## Related to https://stat.ethz.ch/pipermail/bioc-devel/2020-April/016656.html
+)
+```
+
+# Setup
+
+```{r, message = FALSE}
+library(vroom)
+library(SpatialExperiment)
+library(cytomapper)
+library(imcRtools)
+library(ggpubr)
+```
+
+Start with downloading from and unzipping the dataset from
+[synapse](https://www.synapse.org/#!Synapse:syn22345748/files/):
+
+```{r}
+data.dir <- "TMA11"
+quant.dir <- file.path(data.dir, "quantification")
+seg.dir <- file.path(data.dir, "segmentation")
+```
+
+# Data
+
+The tissue microarray (TMA) contains cores from 34 cancer, non-neoplastic diseases,
+and normal tissues collected from clinical discards under an IRB-supervised protocol.
+
+The TMA was imaged using the cyclic immunofluorescence (CyCIF) method described
+in Lin et al 2018. Data were collected with a 20X magnification, 0.75 NA objective 
+with 2x2-pixel binning using two multiplex antibody panels (on section 11 "TMA11"
+and section 22 "TMA22").
+
+1. Markers:
+
+```{r}
+marker.file <- file.path(data.dir, "markers.csv")
+markers <- read.csv(marker.file)
+dim(markers)
+head(markers)
+```
+
+2. Tissue metadata:  
+
+For the EMIT dataset, human tissue specimens (from 42 patients) were used to
+construct a multitissue microarray (HTMA427). 
+
+Two 1.5-mm-diameter cores were acquired from each of 60 tissue regions with the
+goal of acquiring one or two examples of as many tumors as possible (with matched
+normal tissue from the same resection when that was feasible), as well as several
+non-neoplastic medical diseases involving acute inflammation (for example
+diverticulitis and appendicitis), and secondary lymphoid tissues such as tonsil,
+spleen and lymph nodes.
+
+Overall, the TMA contained 120 cores plus 3 additional "marker cores", which are
+cores added to the TMA in a manner that makes it possible to orient the TMA in images.
+
+```{r, message = FALSE}
+tissue.file <- file.path(data.dir, "tissues.csv")
+tissues <- read.csv(tissue.file)
+dim(tissues)
+head(tissues)
+```
+
+Would be good to get some more metadata here on the tissue samples (such
+as information on age, sex, and ethnicity of donors, sample location, ...).
+
+```{r}
+table(tissues$tissue_type)
+```
+
+Some information on how many samples of each donor were obtained
+
+```{r}
+donor.id <- substring(tissues$donor_block_id, 1, 4)
+table(donor.id)
+```
+
+3. Quantification:
+
+We have a spatial feature table for each of the 123 cores:
+
+```{r, message = FALSE}
+files <- list.files(quant.dir, full.names = TRUE)
+head(files)
+length(files)
+```
+
+We read in the data and reshape it to an overall data frame:
+
+```{r}
+cont <- lapply(files, vroom::vroom, show_col_types = FALSE)
+nr.cells <- vapply(cont, nrow, numeric(1)) 
+cont <- do.call(rbind, cont)
+cont <- data.frame(cont)
+```
+
+```{r}
+core.vec <- basename(files)
+core.vec <- sub("^unmicst-", "", core.vec)
+core.vec <- sub("\\.csv$", "", core.vec)
+core.vec <- as.integer(core.vec)
+core.vec <- rep(core.vec, nr.cells)
+cont <- cbind(CoreID = core.vec, cont)
+```
+
+```{r}
+dim(cont)
+head(cont)
+```
