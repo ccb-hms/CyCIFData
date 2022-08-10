@@ -27,11 +27,11 @@ knitr::opts_chunk$set(
 # Setup
 
 ```{r, message = FALSE}
-library(vroom)
-library(SpatialExperiment)
 library(cytomapper)
 library(imcRtools)
 library(ggpubr)
+library(vroom)
+library(SpatialExperiment)
 ```
 
 Start with downloading from and unzipping the dataset from
@@ -39,11 +39,14 @@ Start with downloading from and unzipping the dataset from
 
 ```{r}
 data.dir <- "TMA11"
+img.dir <- file.path(data.dir, "dearray")
 quant.dir <- file.path(data.dir, "quantification")
 seg.dir <- file.path(data.dir, "segmentation")
 ```
 
 # Data
+
+## Metadata
 
 The tissue microarray (TMA) contains cores from 34 cancer, non-neoplastic diseases,
 and normal tissues collected from clinical discards under an IRB-supervised protocol.
@@ -53,7 +56,10 @@ in Lin et al 2018. Data were collected with a 20X magnification, 0.75 NA objecti
 with 2x2-pixel binning using two multiplex antibody panels (on section 11 "TMA11"
 and section 22 "TMA22").
 
-1. Markers:
+### Markers
+
+A metadata table mapping channel indices to antibodies used for staining, along 
+with their QC information.
 
 ```{r}
 marker.file <- file.path(data.dir, "markers.csv")
@@ -62,7 +68,7 @@ dim(markers)
 head(markers)
 ```
 
-2. Tissue metadata:  
+### Tissue metadata:  
 
 For the EMIT dataset, human tissue specimens (from 42 patients) were used to
 construct a multitissue microarray (HTMA427). 
@@ -76,6 +82,9 @@ spleen and lymph nodes.
 
 Overall, the TMA contained 120 cores plus 3 additional "marker cores", which are
 cores added to the TMA in a manner that makes it possible to orient the TMA in images.
+
+A metadata table mapping dearrayed indices (`dearray/*.tif`) to the original
+positions in the TMA and the corresponding donor IDs and tissue types.
 
 ```{r, message = FALSE}
 tissue.file <- file.path(data.dir, "tissues.csv")
@@ -98,9 +107,12 @@ donor.id <- substring(tissues$donor_block_id, 1, 4)
 table(donor.id)
 ```
 
-3. Quantification:
+## Expression data
 
-We have a spatial feature table for each of the 123 cores:
+Spatial feature tables capturing mean marker expression in each cell and basic
+morphological features produced by `regionprops()` from
+[scikit-image](https://scikit-image.org/docs/0.12.x/api/skimage.measure.html#regionprops)
+for each of the 123 cores:
 
 ```{r, message = FALSE}
 files <- list.files(quant.dir, full.names = TRUE)
@@ -129,4 +141,61 @@ cont <- cbind(CoreID = core.vec, cont)
 ```{r}
 dim(cont)
 head(cont)
+```
+
+## Image data
+
+### Raw images 
+
+Raw images of 123 individual cores in each TMA image.
+These have been stitched and registered from the original TMA images using
+[ASHLAR](https://github.com/labsyspharm/ashlar) and dearrayed using 
+[Coreograph](https://github.com/HMS-IDAC/UNetCoreograph). 
+
+As each of the 123 images is >1 GB, and will thus be too big to fit into memory
+on most machines, we  store them as HDF5 first. This conversion to HDF5 is slow
+and is best carried out in parallel on eg a computer cluster.
+
+```{r}
+hdf5.dir <- file.path(img.dir, "hdf5")
+if(!file.exists(hdf5.dir)) dir.create(hdf5.dir)
+```
+
+```{r, eval = FALSE}
+img.list <- cytomapper::loadImages("dearray",
+                                   pattern = ".tif",
+                                   on_disk = TRUE,
+                                   h5FilesPath = hdf5.dir)
+```
+
+Once we've converted the tif files to h5 files, we can load them chunkwise with
+loading data on demand:
+
+```{r}
+img.list <- cytomapper::loadImages(hdf5.dir)
+ind <- order(as.integer(names(img.list)))
+img.list <- img.list[ind]
+img.list
+```
+
+Let's add names to the channels
+
+```{r}
+channelNames(img.list) <- paste(markers$channel_number, 
+                                markers$marker_name,
+                                sep = "_")
+```
+
+Let's inspect the a subset of images and a subset of markers for demonstration
+purposes:
+
+```{r, fig.width = 10, fig.height = 10}
+cytomapper::plotPixels(img.list[1:8],
+                       colour_by = channelNames(img.list)[1:6])
+```
+
+### Masks
+
+```{r}
+list.files(seg.dir)
 ```
