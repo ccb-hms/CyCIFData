@@ -26,18 +26,17 @@ knitr::opts_chunk$set(
 
 # Setup
 
-```{r, message = FALSE}
+```{r libs, message = FALSE}
 library(cytomapper)
-library(imcRtools)
-library(ggpubr)
 library(vroom)
+library(CytoImageList)
 library(SpatialExperiment)
 ```
 
 Start with downloading from and unzipping the dataset from
 [synapse](https://www.synapse.org/#!Synapse:syn22345748/files/):
 
-```{r}
+```{r dirs}
 data.dir <- "TMA11"
 img.dir <- file.path(data.dir, "dearray")
 quant.dir <- file.path(data.dir, "quantification")
@@ -61,14 +60,36 @@ and section 22 "TMA22").
 A metadata table mapping channel indices to antibodies used for staining, along 
 with their QC information.
 
-```{r}
+```{r markers}
 marker.file <- file.path(data.dir, "markers.csv")
 markers <- read.csv(marker.file)
 dim(markers)
 head(markers)
 ```
 
-### Tissue metadata:  
+There are two duplicate markers:
+
+```{r dup-markers}
+which(table(markers$marker_name) > 1)
+subset(markers, marker_name %in% c("ECAD", "KI67"))
+```
+
+Here, we resolve the duplicated marker IDs by attaching an integer suffix. 
+
+```{r resolve-dup-markers}
+for(n in c("ECAD", "KI67"))
+{
+    ind <- markers$marker_name == n
+    markers$marker_name[ind] <- paste(markers$marker_name[ind],
+                                      1:2,
+                                      sep = "_")
+}
+rownames(markers) <- markers$marker_name
+ind <- setdiff(colnames(markers), "marker_name")
+markers <- markers[,ind]
+```
+
+### Tissue metadata  
 
 For the EMIT dataset, human tissue specimens (from 42 patients) were used to
 construct a multitissue microarray (HTMA427). 
@@ -86,23 +107,29 @@ cores added to the TMA in a manner that makes it possible to orient the TMA in i
 A metadata table mapping dearrayed indices (`dearray/*.tif`) to the original
 positions in the TMA and the corresponding donor IDs and tissue types.
 
-```{r, message = FALSE}
+```{r tissues, message = FALSE}
 tissue.file <- file.path(data.dir, "tissues.csv")
 tissues <- read.csv(tissue.file)
 dim(tissues)
 head(tissues)
 ```
 
+```{r tissue-order}
+ind <- order(as.integer(tissues$dearray_id))
+tissues <- tissues[ind,]
+rownames(tissues) <- NULL
+```
+
 Would be good to get some more metadata here on the tissue samples (such
 as information on age, sex, and ethnicity of donors, sample location, ...).
 
-```{r}
+```{r tissue-type}
 table(tissues$tissue_type)
 ```
 
 Some information on how many samples of each donor were obtained
 
-```{r}
+```{r donors}
 donor.id <- substring(tissues$donor_block_id, 1, 4)
 table(donor.id)
 ```
@@ -114,7 +141,7 @@ morphological features produced by `regionprops()` from
 [scikit-image](https://scikit-image.org/docs/0.12.x/api/skimage.measure.html#regionprops)
 for each of the 123 cores:
 
-```{r, message = FALSE}
+```{r exprs-files, message = FALSE}
 files <- list.files(quant.dir, full.names = TRUE)
 head(files)
 length(files)
@@ -122,14 +149,14 @@ length(files)
 
 We read in the data and reshape it to an overall data frame:
 
-```{r}
+```{r exprs-cont}
 cont <- lapply(files, vroom::vroom, show_col_types = FALSE)
 nr.cells <- vapply(cont, nrow, numeric(1)) 
 cont <- do.call(rbind, cont)
 cont <- data.frame(cont)
 ```
 
-```{r}
+```{r exprs-reshape}
 core.vec <- basename(files)
 core.vec <- sub("^unmicst-", "", core.vec)
 core.vec <- sub("\\.csv$", "", core.vec)
@@ -138,9 +165,79 @@ core.vec <- rep(core.vec, nr.cells)
 cont <- cbind(CoreID = core.vec, cont)
 ```
 
-```{r}
+```{r exprs-dim}
 dim(cont)
 head(cont)
+```
+
+Ok, let's separate this into expression data and cell metadata:
+
+```{r exprs-sep}
+ind <- grep("_cellMask$", colnames(cont), value = TRUE)
+exprs <- t(cont[,ind])
+rownames(exprs) <- sub("_cellMask$", "", rownames(exprs))
+stopifnot(rownames(exprs) %in% rownames(markers))
+```
+
+```{r coldata}
+ind <- setdiff(colnames(cont), ind)
+cdat <- cont[,ind]
+head(cdat)
+```
+
+`X_centroid` and `column_centroid`, and `Y_centroid` and `row_centroid` seem to be
+identical, so let's drop one of those:
+
+```{r spatial-coords}
+all(cdat$X_centroid == cdat$column_centroid)
+all(cdat$Y_centroid == cdat$row_centroid)
+ind <- setdiff(colnames(cdat), c("column_centroid", "row_centroid"))
+cdat <- cdat[,ind]
+```
+
+Obtain spatial coordinates mat:
+
+```{r spatial-coords-mat}
+xy <- c("X_centroid", "Y_centroid")
+smat <- as.matrix(cdat[,xy])
+colnames(smat) <- c("x", "y")
+ind <- setdiff(colnames(cdat), xy)
+cdat <- cdat[,ind]
+head(cdat)
+```
+
+```{r tissue-cdat-sync}
+colnames(tissues)[1] <- colnames(cdat)[1] <- "sample_id"
+ind <- match(cdat[,"sample_id"], tissues[,"sample_id"])
+head(cdat)
+```
+
+Create `SpatialExperiment` from individual components:
+
+```{r create-spe}
+spe <- SpatialExperiment::SpatialExperiment(assays = list(exprs = exprs),
+                                            colData = cdat,
+                                            rowData = markers,      
+                                            spatialCoords = smat)
+```
+
+Where to we store sample-level metadata in a `SingleCellExperiment` / `SpatialExperiment`?
+People seem to just replicate sample-level metadata for each cell beloning
+to one sample. That doesn't seem to be the most memory-efficient approach though.
+
+```{r tissue-metadata}
+metadata(spe)$tissues <- DataFrame(tissues)
+spe
+```
+
+Inspect the `SpatialExperiment`:
+
+```{r inspect-spe}
+assay(spe)[1:5,1:5]
+colData(spe)
+rowData(spe)
+head(spatialCoords(spe))
+metadata(spe)$tissues
 ```
 
 ## Image data
@@ -156,12 +253,12 @@ As each of the 123 images is >1 GB, and will thus be too big to fit into memory
 on most machines, we  store them as HDF5 first. This conversion to HDF5 is slow
 and is best carried out in parallel on eg a computer cluster.
 
-```{r}
+```{r hdf5-files}
 hdf5.dir <- file.path(img.dir, "hdf5")
 if(!file.exists(hdf5.dir)) dir.create(hdf5.dir)
 ```
 
-```{r, eval = FALSE}
+```{r load-images, eval = FALSE}
 img.list <- cytomapper::loadImages("dearray",
                                    pattern = ".tif",
                                    on_disk = TRUE,
@@ -171,7 +268,7 @@ img.list <- cytomapper::loadImages("dearray",
 Once we've converted the tif files to h5 files, we can load them chunkwise with
 loading data on demand:
 
-```{r}
+```{r load-images-hdf5}
 img.list <- cytomapper::loadImages(hdf5.dir)
 ind <- order(as.integer(names(img.list)))
 img.list <- img.list[ind]
@@ -180,22 +277,110 @@ img.list
 
 Let's add names to the channels
 
-```{r}
-channelNames(img.list) <- paste(markers$channel_number, 
-                                markers$marker_name,
-                                sep = "_")
+```{r channel-names}
+channelNames(img.list) <- rownames(spe)
 ```
 
 Let's inspect the a subset of images and a subset of markers for demonstration
 purposes:
 
-```{r, fig.width = 10, fig.height = 10}
+```{r plot-pixels, fig.width = 10, fig.height = 10}
 cytomapper::plotPixels(img.list[1:8],
                        colour_by = channelNames(img.list)[1:6])
 ```
 
+Which tissues are these:
+
+```{r tissues-plotted}
+subset(tissues, sample_id %in% as.character(1:8))
+```
+
 ### Masks
 
-```{r}
-list.files(seg.dir)
+Segmentation masks of cells and nucleis computed with a deep learning model
+based on a [UNet architecture](https://github.com/HMS-IDAC/UnMicst).
+
+This requires some restructuring of the `segmentation` subdirectory of the
+primary data release - it contains a subdirectory for each core with files
+named `cellMask.tif` and `nucleiMask.tif`, but what we actually need is a
+directory for both mask types.
+
+```{r masks}
+cell.mask.dir <- file.path(seg.dir, "cell_masks")
+nuclei.mask.dir <- file.path(seg.dir, "nuclei_masks")
+```
+
+We can now copy the files:
+
+```{r seg-dir-restruct, eval = FALSE}
+for(f in cell.mask.files)
+{
+    spl <- unlist(strsplit(f, "/"))[3]
+    i <- sub("unmicst-", "", spl)
+    of <- file.path(cell.mask.dir, paste(i, "tif", sep = "."))
+    file.copy(f, of)
+}
+for(f in nuclei.mask.files)
+{
+    spl <- unlist(strsplit(f, "/"))[3]
+    i <- sub("unmicst-", "", spl)
+    of <- file.path(nuclei.mask.dir, paste(i, "tif", sep = "."))
+    file.copy(f, of)
+}
+```
+
+Read the masks:
+
+```{r read-masks}
+cell.masks <- cytomapper::loadImages(cell.mask.dir, as.is = TRUE)
+nuclei.masks <- cytomapper::loadImages(nuclei.mask.dir, as.is = TRUE)
+```
+
+Sort in numeric core order:
+
+```{r order-masks}
+ind <- order(as.integer(names(cell.masks)))
+cell.masks <- cell.masks[ind]
+mcols(cell.masks)$sample_id <- names(cell.masks)
+
+ind <- order(as.integer(names(nuclei.masks)))
+nuclei.masks <- nuclei.masks[ind]
+mcols(nuclei.masks)$sample_id <- names(nuclei.masks)
+```
+
+Let's plot some example cores:
+
+```{r plot-cell-masks}
+cytomapper::plotCells(cell.masks[c(1, 57, 114)],
+                      object = spe,
+                      img_id = "sample_id",
+                      cell_id = "CellID", 
+                      colour_by = channelNames(img.list)[1:6],
+                      exprs_values = "exprs")
+```
+
+```{r plot-nuclei-masks}
+cytomapper::plotCells(nuclei.masks[c(1, 57, 114)],
+                      object = spe,
+                      img_id = "sample_id",
+                      cell_id = "CellID", 
+                      colour_by = channelNames(img.list)[1:6],
+                      exprs_values = "exprs")
+```
+
+Which tissues are these:
+
+```{r tissues-plotted2}
+subset(tissues, sample_id %in% as.character(c(1, 57, 114)))
+```
+
+We can also plot the whole TMA, ie. all 123 cores:
+
+```{r plot-TMA, fig.width = 12, fig.height = 12}
+cytomapper::plotCells(cell.masks,
+                      object = spe,
+                      img_id = "sample_id",
+                      cell_id = "CellID",
+                      colour_by = channelNames(img.list)[1:6],
+                      exprs_values = "exprs")
 ```
