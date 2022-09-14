@@ -8,6 +8,7 @@ df <- data.frame(
     SourceType = "TXT",
     Location_Prefix = "https://mghp.osn.xsede.org/",
     RDataPath = "bir190004-bucket01/TMA11/zarr/",
+    DispatchClass = "FilePath",
     RDataClass = "ZarrRemote",
     SourceVersion = "1.0.0",
     Maintainer  = "Ludwig Geistlinger <ludwig_geistlinger@hms.harvard.edu>",
