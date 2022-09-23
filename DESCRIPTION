@@ -25,7 +25,10 @@ BugReports: https://github.com/ccb-hms/CyCIFData/issues
 Depends:
     R (>= 4.2.0),
     cytomapper,
-    SpatialExperiment
+    HDF5Array,
+    SpatialExperiment,
+    rhdf5,
+    ZarrExperiment
 Imports: 
     grDevices,
     AnnotationHub,
