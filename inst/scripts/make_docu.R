@@ -76,7 +76,7 @@ df <- data.frame(
         rep("Associated Expression Data for EMIT", 4)
     ),
     SourceUrl = "https://www.synapse.org/#!Synapse:syn22345748/wiki/",
-    SourceType = c("TXT", "TXT", rep("Rds", 4)),
+    SourceType = c("TXT", "TXT", rep("RDS", 4)),
     Location_Prefix = rep("https://mghp.osn.xsede.org/", 6),
     RDataPath = paste0(
         "bir190004-bucket01/TMA11/", c("zarr/", "hdf5/",
