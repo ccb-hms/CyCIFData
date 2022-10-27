@@ -14,9 +14,12 @@
 #'   <https://www.synapse.org/#!Synapse:syn22345748/wiki/>
 #'
 #' @examples
-#'
-#' browseURL("https://mghp.osn.xsede.org/bir190004-bucket01/index.html#TMA11/")
-#' browseURL("https://www.synapse.org/#!Synapse:syn22345748/wiki/")
+#' if (interactive()) {
+#'   browseURL(
+#'     "https://mghp.osn.xsede.org/bir190004-bucket01/index.html#TMA11/"
+#'   )
+#'   browseURL("https://www.synapse.org/#!Synapse:syn22345748/wiki/")
+#' }
 #'
 #' @export
 TMA11 <- function(format = c("hdf5", "zarr")) {

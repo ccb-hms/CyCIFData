@@ -19,9 +19,12 @@ The function uses \code{ZarrExperiment} to locate remote files. Depending on the
 Storage Network (OSN) and queried via \code{ExperimentHub} (pending).
 }
 \examples{
-
-browseURL("https://mghp.osn.xsede.org/bir190004-bucket01/index.html#TMA11/")
-browseURL("https://www.synapse.org/#!Synapse:syn22345748/wiki/")
+if (interactive()) {
+  browseURL(
+    "https://mghp.osn.xsede.org/bir190004-bucket01/index.html#TMA11/"
+  )
+  browseURL("https://www.synapse.org/#!Synapse:syn22345748/wiki/")
+}
 
 }
 \seealso{
