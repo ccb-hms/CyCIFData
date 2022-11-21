@@ -5,10 +5,14 @@
 #' `CytoImageList` is given for `HDF5` files. All files are hosted on the Open
 #' Storage Network (OSN) and queried via `ExperimentHub` (pending).
 #'
+#' @param data.component character(1)
+#'
 #' @param format character(1) Either "hdf5" or "zarr" to indicate the desired
 #'   file types to obtain from the OSN. HDF5 files will be represented via
-#'   the `cytomapper::CytoImageList` class and Zarr files will be returned as
+#'   the `CytoImageList::CytoImageList` class and Zarr files will be returned as
 #'   a single `ZarrRemote` object.
+#'
+#' @param mask.type character(1)
 #'
 #' @seealso <https://mghp.osn.xsede.org/bir190004-bucket01/index.html#TMA11/>,
 #'   <https://www.synapse.org/#!Synapse:syn22345748/wiki/>
@@ -23,12 +27,13 @@
 #'
 #' @export
 TMA11 <- function(data.component = c("expression", "images", "masks"), 
-                  format = c("hdf5", "zarr"))
+                  format = c("hdf5", "zarr"),
+                  mask.type = c("cell", "nucleus"))
 {
     data.component <- match.arg(data.component)
     if(data.component == "expression") .loadExpression()
     else if(data.component == "images") .loadImages(format)
-    else .loadMasks()
+    else .loadMasks(mask.type)
 }
 
 .loadImages <- function(format = c("hdf5", "zarr"))
@@ -43,25 +48,48 @@ TMA11 <- function(data.component = c("expression", "images", "masks"),
         return(zr)
     files <- ZarrExperiment::files(zr)
     ex_files <- setNames(files, basename(files))
-    CytoImageList::CytoImageList(
-        lapply(
-            ex_files, function(file) {
-                HDF5Array::HDF5Array(
-                    HDF5Array::H5File(file, s3 = TRUE), .get_h5_name(file)
-                )
-            }
-        ),
-        on_disk = TRUE,
-        h5FilesPath = HDF5Array::getHDF5DumpDir()
-    )
+
+    # TODO: check in with CytoImageList on caching to not repeatedly
+    #       download from OSN
+    l <- lapply(ex_files, .getH5) 
+    cil <- CytoImageList::CytoImageList(l, on_disk = TRUE,
+                                        h5FilesPath = HDF5Array::getHDF5DumpDir())
+    return(cil)
 }
 
 .loadExpression <- function()
 {
+    # connect to bucket and get file contents
+    zr <- ZarrExperiment::ZarrRemote(endpoint = "https://mghp.osn.xsede.org/",
+                                     bucket = "bir190004-bucket01/TMA11/rds/")
+    files <- ZarrExperiment::files(zr)
 
+    # pull out individaul components of the omics data
+    exprs <- .getRecord("exprs", files)
+    cdat <- .getRecord("coldata", files)
+    rdat <- .getRecord("rowdata", files)
+    tissues <- .getRecord("tissues", files)
+
+    # data reshaping
+    scols <- c("x", "y")
+    smat <- as.matrix(cdat[,scols])
+    rcols <- setdiff(colnames(cdat), scols)
+    cdat <- cdat[,rcols] 
+
+    # construct SpatialExperiment
+    spe <- SpatialExperiment::SpatialExperiment(assay = list(exprs = exprs),
+                                                colData = cdat,
+                                                rowData = rdat,    
+                                                spatialCoords = smat) 
+    return(spe)
 }
 
-.loadMasks <- function()
+.loadMasks <- function(mask.type = c("cell", "nucleus"))
 {
-
+    mask.type <- match.arg(mask.type)
+    zr <- ZarrExperiment::ZarrRemote(
+        endpoint = "https://mghp.osn.xsede.org/",
+        bucket = paste0("bir190004-bucket01/TMA11/segmentation/")
+    )
+    files <- ZarrExperiment::files(zr)
 }
