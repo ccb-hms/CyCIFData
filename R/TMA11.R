@@ -51,36 +51,40 @@ TMA11 <- function(data.component = c("expression", "images", "masks"),
 
     # TODO: check in with CytoImageList on caching to not repeatedly
     #       download from OSN
-    l <- lapply(ex_files, .getH5) 
-    cil <- CytoImageList::CytoImageList(l, on_disk = TRUE,
-                                        h5FilesPath = HDF5Array::getHDF5DumpDir())
-    return(cil)
+    h5array_list <- .get_h5_from_files(ex_files)
+    CytoImageList::CytoImageList(
+        h5array_list,
+        on_disk = TRUE,
+        h5FilesPath = HDF5Array::getHDF5DumpDir()
+    )
 }
 
 .loadExpression <- function()
 {
     # connect to bucket and get file contents
-    zr <- ZarrExperiment::ZarrRemote(endpoint = "https://mghp.osn.xsede.org/",
-                                     bucket = "bir190004-bucket01/TMA11/rds/")
+    zr <- ZarrExperiment::ZarrRemote(
+        endpoint = "https://mghp.osn.xsede.org/",
+        bucket = "bir190004-bucket01/TMA11/rds/"
+    )
     files <- ZarrExperiment::files(zr)
 
-    # pull out individaul components of the omics data
-    exprs <- .getRecord("exprs", files)
-    cdat <- .getRecord("coldata", files)
-    rdat <- .getRecord("rowdata", files)
-    tissues <- .getRecord("tissues", files)
+    # pull out individual components of the omics data
+    exprs <- .get_rds_from_files("exprs", files)
+    cdat <- .get_rds_from_files("coldata", files)
+    rdat <- .get_rds_from_files("rowdata", files)
+    tissues <- .get_rds_from_files("tissues", files)
 
     # data reshaping
     scols <- c("x", "y")
     smat <- as.matrix(cdat[,scols])
     rcols <- setdiff(colnames(cdat), scols)
-    cdat <- cdat[,rcols] 
+    cdat <- cdat[,rcols]
 
     # construct SpatialExperiment
     spe <- SpatialExperiment::SpatialExperiment(assay = list(exprs = exprs),
                                                 colData = cdat,
-                                                rowData = rdat,    
-                                                spatialCoords = smat) 
+                                                rowData = rdat,
+                                                spatialCoords = smat)
     return(spe)
 }
 
