@@ -7,6 +7,7 @@ Authors@R:
              email = "ludwig_geistlinger@hms.harvard.edu", 
              comment = c(ORCID = "0000-0002-2495-5464")),
       person("Tyrone", "Lee", role = "ctb"),
+      person("Marcel", "Ramos", role = "ctb"),
       person("Robert", "Gentleman", role = "aut"))
 Description: CyCIFData is an ExperimentHub package that serves publicly available
     datasets obtained with cyclic immunofluorescence (CyCIF). CyCIF is a highly
